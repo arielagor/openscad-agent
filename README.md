@@ -11,7 +11,7 @@ This project provides an AI-assisted workflow for designing 3D models through na
 - **Natural language 3D modeling**: Describe objects in plain English and get OpenSCAD code
 - **Iterative refinement**: Each design iteration is versioned (e.g., `model_001.scad`, `model_002.scad`)
 - **Visual feedback loop**: Automatic PNG rendering lets the agent see and self-correct its work
-- **Version comparison**: Compare renders between iterations to track improvements
+- **Geometry validation**: STL export checks for non-manifold geometry and other printability issues
 
 ## Requirements
 
@@ -31,6 +31,7 @@ The agent will:
 2. Render `phone_stand_001.png` to preview the result
 3. Evaluate the design and iterate if needed
 4. Continue refining until the design meets your requirements
+5. Export to STL with geometry validation when ready
 
 ## Skills
 
@@ -38,6 +39,17 @@ The agent will:
 |-------|-------------|
 | `/openscad` | Create versioned OpenSCAD files with automatic rendering and iteration |
 | `/preview-scad` | Render any `.scad` file to PNG for visual inspection |
+| `/export-stl` | Convert finalized `.scad` files to STL with geometry validation |
+
+### Workflow
+
+```
+/openscad → /preview-scad → /export-stl
+    ↑______________|              ↓
+    (iterate until correct)   Geometry validation
+                                  ↓
+                            Ready for slicer
+```
 
 ## File Structure
 
@@ -47,9 +59,10 @@ The agent will:
 │   ├── settings.local.json    # Claude Code permissions
 │   └── skills/
 │       ├── openscad/          # Main modeling skill
-│       └── preview-scad/      # Rendering skill
+│       ├── preview-scad/      # PNG rendering skill
+│       └── export-stl/        # STL export with validation
 ├── CLAUDE.md                  # Agent instructions
-└── *.scad / *.png             # Generated models and previews
+└── *.scad / *.png / *.stl     # Generated models, previews, and exports
 ```
 
 ## Example Session
@@ -72,6 +85,12 @@ Added rounded edges, proper proportions, and pedals.
 Creating mini_piano_003.scad...
 [renders and compares]
 Recessed the upper cabinet so the keyboard is more visible.
+
+> export it
+
+Exporting mini_piano_003.stl...
+Geometry validation: PASSED
+Ready for slicing!
 ```
 
 ## License

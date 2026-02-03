@@ -60,3 +60,15 @@ When working on OpenSCAD designs:
    - If no: Identify what's wrong, fix the code, and repeat from step 2
 
 This iterative process helps ensure the final design meets requirements.
+
+## Next Steps
+
+Once the preview looks correct:
+
+1. **Export to STL**: Use `/export-stl` to convert to printable format with geometry validation
+
+## Full Pipeline
+
+```
+/openscad → /preview-scad → /export-stl (with validation)
+```

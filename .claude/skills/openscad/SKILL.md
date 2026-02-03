@@ -99,9 +99,24 @@ See `/preview-scad` for full rendering options:
 - `--render` - Full render mode (slower, more accurate)
 - `--preview` - Preview mode (faster, default)
 
+## Next Steps
+
+Once the design looks correct in PNG previews:
+
+1. **Export to STL**: Use `/export-stl` to convert the final version to STL format
+2. The export includes geometry validation to catch printability issues
+
+## Full Pipeline
+
+```
+/openscad → /preview-scad → /export-stl (with validation)
+```
+
 ## Tips
 
 - Start simple and add complexity in iterations
 - Use meaningful model names that describe the object
 - Keep each version's changes focused on specific improvements
 - Document what changed between versions in your response to the user
+- Only export to STL once the preview looks correct
+- Always run slice-check before considering a model print-ready
