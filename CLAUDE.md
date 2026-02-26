@@ -74,12 +74,22 @@ When designing for 3D printing:
 - **Tolerances**: Add 0.2-0.5mm clearance for parts that fit together
 - **Manifold geometry**: All shapes must be closed solids (no holes in mesh)
 
+## SVG-Based Workflow
+
+For complex organic shapes (curves, ribbons, blobs, detailed outlines), use the SVG-based workflow instead of pure OpenSCAD hull/sphere chains:
+
+1. **Generate SVG with Python** -- use filled shapes (not strokes), output in mm units
+2. **Import in OpenSCAD** -- `rotate([90,0,0]) linear_extrude(height) import("file.svg");`
+3. **Multi-layer depth** -- split into separate SVGs, extrude each at different heights
+
+This is 100-1000x faster than equivalent hull/sphere chains and produces more precise 2D geometry. See the full guide in `.claude/skills/openscad/SKILL.md` and the template script at `.claude/skills/openscad/scripts/generate-svg-template.py`.
+
 ## OpenSCAD Tips
 
 - Use `$fn` to control curve smoothness (higher = smoother, slower)
 - Use `module` to create reusable components
 - Use `difference()` to subtract shapes, `union()` to combine
 - Use `translate()`, `rotate()`, `scale()` for positioning
-- Use `hull()` for organic shapes and smooth transitions
+- Use `hull()` for organic shapes and smooth transitions (or SVG workflow for complex cases)
 - Use `minkowski()` for rounded edges (but it's slow)
 - Always use `union()` when combining overlapping shapes to avoid self-intersection

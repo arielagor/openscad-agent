@@ -6,6 +6,7 @@ allowed-tools:
   - Bash(*/version-scad.sh*)
   - Bash(*/export-stl.sh*)
   - Bash(*openscad*)
+  - Bash(*python*)
   - Read
   - Write
   - Glob
@@ -138,6 +139,112 @@ Then use a judge agent to pick the best elements and combine them.
     (iterate until correct)
 ```
 
+## SVG-Based Workflow (Recommended for Complex Shapes)
+
+For complex organic curves, blobs, ribbons, and detailed 2D outlines, generate SVG paths with Python instead of building shapes purely in OpenSCAD. This approach is **100-1000x faster** (sub-second vs 2+ minutes) and produces more precise geometry.
+
+### When to Use SVG vs Pure OpenSCAD
+
+| Use SVG + linear_extrude | Use pure OpenSCAD |
+|--------------------------|-------------------|
+| Organic curves, ribbons, S-shapes | Simple boxes, cylinders, spheres |
+| Complex outlines, blobs, puddles | Boolean operations (difference, union) |
+| Detailed grids with many bars | Parametric mechanical parts |
+| Bezier curves, smooth paths | Rotate_extrude shapes (torus, etc.) |
+| Text or logo silhouettes | Screw threads, gears |
+
+### The Pipeline
+
+```
+Python generates SVG  -->  OpenSCAD imports SVG  -->  linear_extrude to 3D  -->  render/export
+  (sub-second)              import("file.svg")       height = thickness         .png / .stl
+```
+
+### Python SVG Generation Pattern
+
+Use filled shapes only -- OpenSCAD 2021 only imports filled SVG elements (not strokes). Convert all strokes to filled rectangles or paths.
+
+```python
+import math
+
+def svg_header(width, height):
+    return f'''<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="{width}mm" height="{height}mm"
+     viewBox="0 0 {width} {height}">
+'''
+
+def svg_footer():
+    return '</svg>\n'
+
+# Bars as filled rectangles (NOT strokes)
+def hbar(x1, y, x2, w=1.3):
+    r = w / 2
+    return f'  <rect x="{min(x1,x2):.3f}" y="{y-r:.3f}" width="{abs(x2-x1):.3f}" height="{w:.3f}" rx="{r:.3f}" fill="black"/>\n'
+
+def vbar(x, y1, y2, w=1.3):
+    r = w / 2
+    return f'  <rect x="{x-r:.3f}" y="{min(y1,y2):.3f}" width="{w:.3f}" height="{abs(y2-y1):.3f}" rx="{r:.3f}" fill="black"/>\n'
+
+# Organic shapes as bezier paths
+def blob(cx, cy, r):
+    d = (f"M {cx},{cy-r} "
+         f"C {cx+r*1.2},{cy-r} {cx+r*1.2},{cy+r} {cx},{cy+r} "
+         f"C {cx-r*1.2},{cy+r} {cx-r*1.2},{cy-r} {cx},{cy-r} Z")
+    return f'  <path d="{d}" fill="black"/>\n'
+
+# Ring (donut) using even-odd fill rule
+def ring(cx, cy, outer_r, tube_r):
+    inner_r = outer_r - tube_r
+    outer_r2 = outer_r + tube_r
+    d = (f"M {cx-outer_r2:.3f},{cy:.3f} "
+         f"A {outer_r2:.3f},{outer_r2:.3f} 0 1,0 {cx+outer_r2:.3f},{cy:.3f} "
+         f"A {outer_r2:.3f},{outer_r2:.3f} 0 1,0 {cx-outer_r2:.3f},{cy:.3f} Z "
+         f"M {cx-inner_r:.3f},{cy:.3f} "
+         f"A {inner_r:.3f},{inner_r:.3f} 0 1,1 {cx+inner_r:.3f},{cy:.3f} "
+         f"A {inner_r:.3f},{inner_r:.3f} 0 1,1 {cx-inner_r:.3f},{cy:.3f} Z")
+    return f'  <path d="{d}" fill="black" fill-rule="evenodd"/>\n'
+```
+
+A full template script is available at `.claude/skills/openscad/scripts/generate-svg-template.py`.
+
+### OpenSCAD Import Pattern
+
+```openscad
+// Import SVG and extrude to 3D
+// rotate([90,0,0]) flips the SVG from XY-plane to XZ-plane (standing up)
+rotate([90, 0, 0])
+    linear_extrude(height = 1.5)
+        import("layer_grid.svg");
+
+// Different layers can have different thicknesses for 3D depth effect
+rotate([90, 0, 0])
+    linear_extrude(height = 2.5)
+        import("layer_ribbon.svg");
+
+rotate([90, 0, 0])
+    linear_extrude(height = 3.0)
+        import("layer_blob.svg");
+```
+
+### Multi-Layer SVG Strategy
+
+For 3D depth, split the design into separate SVG files per layer:
+
+1. **Background layer** (thin, e.g. 1.5mm): Grid bars, structural elements
+2. **Mid layer** (medium, e.g. 2.5mm): Ribbons, flowing shapes
+3. **Foreground layer** (thick, e.g. 3.0mm): Accent blobs, cubes, focal elements
+
+Each layer is a separate SVG, imported and extruded at different heights, then combined with `union()`.
+
+### Key Gotchas
+
+- **Filled shapes only**: OpenSCAD 2021 ignores `stroke` -- use `fill="black"` on all elements
+- **Coordinate system**: SVG Y-axis points down; use `rotate([90,0,0])` in OpenSCAD to stand the shape up
+- **Units**: Set SVG `width`/`height` in mm and matching `viewBox` for correct scale
+- **Even-odd fill rule**: Use `fill-rule="evenodd"` for donut/ring shapes (hole inside a shape)
+- **Performance**: A complex SVG with 300+ path points imports in under 1 second vs 2+ minutes for equivalent hull/sphere chains
+
 ## Tips
 
 - Start simple and add complexity in iterations
@@ -146,3 +253,4 @@ Then use a judge agent to pick the best elements and combine them.
 - Document what changed between versions in your response to the user
 - Only export to STL once the preview looks correct
 - For reference matching: iterate at least 5-8 times, comparing each render carefully
+- For complex organic shapes, prefer the SVG-based workflow over pure OpenSCAD hull/sphere chains
