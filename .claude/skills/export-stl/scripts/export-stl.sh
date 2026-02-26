@@ -3,6 +3,7 @@
 # OpenSCAD to STL Exporter with Geometry Validation
 # Converts .scad files to .stl for 3D printing
 # Checks for non-manifold geometry and other printability issues
+# Cross-platform: macOS, Linux, Windows (Git Bash/MSYS2)
 
 set -e
 
@@ -10,19 +11,35 @@ set -e
 OUTPUT=""
 FORMAT="binstl"  # Binary STL by default
 
-# OpenSCAD path (macOS default)
-OPENSCAD="/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD"
-
-# Check if OpenSCAD exists
-if [[ ! -x "$OPENSCAD" ]]; then
+# ── Find OpenSCAD (cross-platform) ──────────────────────────
+find_openscad() {
     if command -v openscad &> /dev/null; then
-        OPENSCAD="openscad"
-    else
-        echo "Error: OpenSCAD not found at $OPENSCAD or in PATH"
-        echo "Please install OpenSCAD from https://openscad.org/"
-        exit 1
+        echo "openscad"; return 0
     fi
-fi
+    if [[ -x "/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD" ]]; then
+        echo "/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD"; return 0
+    fi
+    for pf in "/c/Program Files/OpenSCAD" "/c/Program Files (x86)/OpenSCAD" \
+              "$PROGRAMFILES/OpenSCAD" "${PROGRAMFILES:-}/OpenSCAD"; do
+        if [[ -d "$pf" ]]; then
+            export PATH="$PATH:$pf"
+            if command -v openscad &> /dev/null; then echo "openscad"; return 0; fi
+        fi
+    done
+    for p in /usr/bin/openscad /usr/local/bin/openscad /snap/bin/openscad; do
+        if [[ -x "$p" ]]; then echo "$p"; return 0; fi
+    done
+    return 1
+}
+
+OPENSCAD=$(find_openscad) || {
+    echo "Error: OpenSCAD not found."
+    echo "Install from https://openscad.org/ or via:"
+    echo "  macOS:   brew install openscad"
+    echo "  Linux:   sudo apt install openscad"
+    echo "  Windows: winget install OpenSCAD.OpenSCAD"
+    exit 1
+}
 
 # Parse arguments
 INPUT=""
@@ -106,7 +123,6 @@ CMD+=("$INPUT")
 # Run OpenSCAD and capture all output (warnings go to stderr)
 echo "Rendering and exporting..."
 RESULT=$("${CMD[@]}" 2>&1) || true
-EXIT_CODE=$?
 
 # Check for geometry warnings
 WARNINGS=""
@@ -128,7 +144,6 @@ if echo "$RESULT" | grep -qi "degenerate"; then
 fi
 
 if echo "$RESULT" | grep -qi "WARNING\|warning"; then
-    # Capture other warnings
     OTHER_WARNS=$(echo "$RESULT" | grep -i "warning" | head -5)
     if [[ -n "$OTHER_WARNS" ]]; then
         WARNINGS="$WARNINGS\n- Other warnings:\n$OTHER_WARNS"
@@ -140,15 +155,16 @@ if [[ -f "$OUTPUT" ]]; then
     SIZE=$(ls -lh "$OUTPUT" | awk '{print $5}')
 
     # Get triangle count from binary STL
+    TRIANGLES=""
     if [[ "$FORMAT" == "binstl" ]]; then
-        TRIANGLES=$(od -An -tu4 -j80 -N4 "$OUTPUT" | tr -d ' ')
+        TRIANGLES=$(od -An -tu4 -j80 -N4 "$OUTPUT" 2>/dev/null | tr -d ' ')
     fi
 
     echo ""
     echo "--- Export Results ---"
     echo "Output: $OUTPUT"
     echo "Size: $SIZE"
-    if [[ -n "$TRIANGULAR" ]]; then
+    if [[ -n "$TRIANGLES" ]]; then
         echo "Triangles: $TRIANGLES"
     fi
 

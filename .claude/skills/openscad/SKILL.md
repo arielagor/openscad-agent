@@ -4,9 +4,12 @@ description: Create versioned OpenSCAD (.scad) files for 3D printing, render pre
 allowed-tools:
   - Bash(*/render-scad.sh*)
   - Bash(*/version-scad.sh*)
+  - Bash(*/export-stl.sh*)
+  - Bash(*openscad*)
   - Read
   - Write
   - Glob
+  - Task
 ---
 
 # OpenSCAD Design Skill
@@ -49,9 +52,29 @@ Evaluate what changed and whether the new version better matches requirements.
 ### 5. Iterate
 
 If the design needs improvement:
-1. Analyze what's wrong
+1. Analyze what's wrong — be specific (e.g., "ribbon too thin", "drip too flat")
 2. Create the next version (e.g., `piano_003.scad`)
 3. Render and compare again
+
+## Matching a Reference Image
+
+When the user provides a reference image to replicate:
+
+1. **Decompose** the reference into distinct elements (cage, ribbon, blob, etc.)
+2. **Start with structure** — get the main shape/proportions right first
+3. **Layer in details** — add decorative elements one at a time
+4. **Compare methodically** — after each render, list specific differences from the reference
+5. **Parallelize** — for complex designs, use Task agents to iterate on different elements simultaneously, then combine the best of each
+
+### Parallel Iteration Strategy
+
+For complex models, launch multiple agents working on different aspects:
+- Agent A: Ribbon/curves
+- Agent B: Organic/blob forms
+- Agent C: Structural proportions
+- Agent D: Overall composition
+
+Then use a judge agent to pick the best elements and combine them.
 
 ## File Naming Convention
 
@@ -59,57 +82,60 @@ If the design needs improvement:
 <model-name>_<version>.scad  ->  <model-name>_<version>.png
 ```
 
-Examples:
-- `phone_stand_001.scad` -> `phone_stand_001.png`
-- `phone_stand_002.scad` -> `phone_stand_002.png`
-- `gear_001.scad` -> `gear_001.png`
-
-Use underscores in model names, and always use 3-digit zero-padded version numbers.
-
-## Example Session
-
-User asks for a piano model:
-
-1. Check for existing versions:
-   ```bash
-   .claude/skills/openscad/scripts/version-scad.sh piano
-   ```
-   Output: `piano_001` (no existing files)
-
-2. Write `piano_001.scad` with initial design
-
-3. Render preview:
-   ```bash
-   .claude/skills/preview-scad/scripts/render-scad.sh piano_001.scad --output piano_001.png
-   ```
-
-4. Read `piano_001.png` to inspect the result
-
-5. If improvements needed, create `piano_002.scad`, render to `piano_002.png`
-
-6. Read both `piano_001.png` and `piano_002.png` to compare iterations
+- Use underscores in model names
+- Use 3-digit zero-padded version numbers (001, 002, etc.)
+- For parallel agents: `<model-name>_<agent>_<version>.scad` (e.g., `pendant_A_001.scad`)
 
 ## Render Options
 
-See `/preview-scad` for full rendering options:
+```bash
+.claude/skills/preview-scad/scripts/render-scad.sh <input.scad> [options]
+```
 
-- `--size <WxH>` - Image dimensions (default: `800x600`)
-- `--camera <x,y,z,tx,ty,tz,d>` - Camera position
-- `--colorscheme <name>` - Color scheme (default: `Cornfield`)
-- `--render` - Full render mode (slower, more accurate)
-- `--preview` - Preview mode (faster, default)
+- `--output <path>` — Output PNG path (default: `<input>.png`)
+- `--size <WxH>` — Image dimensions (default: `800x600`, use `1024x768` for detail)
+- `--camera <x,y,z,tx,ty,tz,d>` — Camera position
+- `--colorscheme <name>` — Color scheme (default: `Cornfield`)
+- `--render` — Full render mode (slower, accurate)
+- `--preview` — Preview mode (faster, default)
 
-## Next Steps
+### Useful Camera Angles
 
-Once the design looks correct in PNG previews:
+- Default (auto): omit `--camera` for automatic viewall
+- Front: `--camera 0,-80,20,11,3.5,20,80`
+- 3/4 view: `--camera 30,20,25,11,3.5,20,80`
+- Side: `--camera 90,0,20,11,3.5,20,80`
 
-1. **Export to STL**: Use `/export-stl` to convert the final version to STL format
-2. The export includes geometry validation to catch printability issues
+## OpenSCAD Techniques
+
+### Organic/Flowing Shapes
+- **Tubular paths**: Chain `hull()` between consecutive `sphere()` placements along a parametric curve
+- **Ribbons**: Use `hull()` between `scale([thin, wide, 1]) sphere(r)` pairs for flat ribbon cross-sections
+- **Puddles/blobs**: Layer multiple `scale([x,y,z]) sphere(r)` with different flattening factors
+- **Smooth transitions**: Use `hull()` to blend between two shapes
+- **Wavy forms**: Add `sin()/cos()` perturbation to parametric paths
+
+### Structural/Grid Shapes
+- **Bar/rod**: `hull() { translate(p1) sphere(r); translate(p2) sphere(r); }`
+- **Rounded cube**: `minkowski() { cube(size - 2*r, center=true); sphere(r); }`
+- **Torus/ring**: `rotate_extrude() translate([R,0,0]) circle(r);`
+
+### Key Functions
+- `smoothstep(a,b,t)` — Smooth interpolation for transitions
+- `$fn` — Controls curve smoothness (48 for preview, 96+ for final export)
+
+### Common Pitfalls
+- `hull()` of many spheres is expensive — keep step count reasonable (200-400)
+- `minkowski()` is slow — avoid in loops, use for single accents only
+- Always wrap overlapping geometry in `union()` to avoid self-intersection in STL
+- Flat shapes (scale Z near 0) can cause degenerate faces — keep minimum 0.2
 
 ## Full Pipeline
 
 ```
 /openscad → /preview-scad → /export-stl (with validation)
+    ↑______________|
+    (iterate until correct)
 ```
 
 ## Tips
@@ -119,4 +145,4 @@ Once the design looks correct in PNG previews:
 - Keep each version's changes focused on specific improvements
 - Document what changed between versions in your response to the user
 - Only export to STL once the preview looks correct
-- Always run slice-check before considering a model print-ready
+- For reference matching: iterate at least 5-8 times, comparing each render carefully
