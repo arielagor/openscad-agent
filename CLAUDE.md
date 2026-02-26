@@ -115,3 +115,10 @@ This is 100-1000x faster than equivalent hull/sphere chains for 2D geometry. See
 - Use `hull()` for organic shapes and smooth transitions (or SVG workflow for complex cases)
 - Use `minkowski()` for rounded edges (but it's slow)
 - Always use `union()` when combining overlapping shapes to avoid self-intersection
+
+## Decision Documentation
+
+This project maintains a decision log at `docs/decisions/`. At the start of
+every session, read the most recent entry for context. At the end of every
+session that involves code changes, create a new entry documenting the
+decisions made. See docs/decisions/INDEX.md for the full history.
