@@ -74,15 +74,37 @@ When designing for 3D printing:
 - **Tolerances**: Add 0.2-0.5mm clearance for parts that fit together
 - **Manifold geometry**: All shapes must be closed solids (no holes in mesh)
 
+## Blender Python Workflow (Recommended for Complex 3D Shapes)
+
+For complex organic, sculptural, or jewelry-like 3D models (swept ribbons, metaball blobs, curved tubes, rounded forms), use **Blender's headless Python scripting** instead of OpenSCAD or SVG:
+
+```
+blender --background --python script.py  -->  STL (instant)  -->  OpenSCAD import for preview
+```
+
+Key advantages over OpenSCAD:
+- **True 3D swept tubes/ribbons** along arbitrary parametric paths (not extruded 2D)
+- **Metaballs** for organic blobby shapes that automatically merge
+- **Curves with bevel** for cylindrical bars (replaces slow hull/sphere chains)
+- **Subdivision surfaces** for rounded cubes (replaces slow minkowski)
+- **Instant STL export** (~2ms vs minutes in OpenSCAD)
+
+**Decision guide:**
+- **Blender**: Organic shapes, swept curves, metaballs, complex jewelry, anything with true 3D swept geometry
+- **OpenSCAD**: Simple geometric/mechanical parts, boolean operations, quick prototypes
+- **SVG**: Flat 2D outlines extruded to 3D only
+
+See the full guide in `.claude/skills/openscad/SKILL.md` and the template script at `.claude/skills/openscad/scripts/blender-template.py`.
+
 ## SVG-Based Workflow
 
-For complex organic shapes (curves, ribbons, blobs, detailed outlines), use the SVG-based workflow instead of pure OpenSCAD hull/sphere chains:
+For flat 2D-to-3D shapes (outlines, grid patterns, text silhouettes), use the SVG-based workflow:
 
 1. **Generate SVG with Python** -- use filled shapes (not strokes), output in mm units
 2. **Import in OpenSCAD** -- `rotate([90,0,0]) linear_extrude(height) import("file.svg");`
 3. **Multi-layer depth** -- split into separate SVGs, extrude each at different heights
 
-This is 100-1000x faster than equivalent hull/sphere chains and produces more precise 2D geometry. See the full guide in `.claude/skills/openscad/SKILL.md` and the template script at `.claude/skills/openscad/scripts/generate-svg-template.py`.
+This is 100-1000x faster than equivalent hull/sphere chains for 2D geometry. See the full guide in `.claude/skills/openscad/SKILL.md` and the template script at `.claude/skills/openscad/scripts/generate-svg-template.py`.
 
 ## OpenSCAD Tips
 

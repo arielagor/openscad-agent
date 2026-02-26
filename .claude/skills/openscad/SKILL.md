@@ -7,6 +7,7 @@ allowed-tools:
   - Bash(*/export-stl.sh*)
   - Bash(*openscad*)
   - Bash(*python*)
+  - Bash(*blender*)
   - Read
   - Write
   - Glob
@@ -245,6 +246,236 @@ Each layer is a separate SVG, imported and extruded at different heights, then c
 - **Even-odd fill rule**: Use `fill-rule="evenodd"` for donut/ring shapes (hole inside a shape)
 - **Performance**: A complex SVG with 300+ path points imports in under 1 second vs 2+ minutes for equivalent hull/sphere chains
 
+## Blender Python Workflow (Recommended for Complex 3D Shapes)
+
+For complex organic, sculptural, or jewelry-like 3D models (swept ribbons, metaball blobs, curved tubes, rounded forms), use Blender's headless Python scripting instead of OpenSCAD or SVG. This approach produces **true 3D geometry** (not extruded 2D) and exports STL in milliseconds.
+
+### When to Use Blender vs OpenSCAD vs SVG
+
+| Use Blender Python | Use OpenSCAD | Use SVG + linear_extrude |
+|--------------------|--------------|--------------------------|
+| Organic/jewelry shapes (pendants, sculptures) | Simple mechanical parts (boxes, gears, brackets) | Flat 2D outlines extruded to 3D |
+| Swept curves & ribbons (tube along 3D path) | Boolean operations on primitives | Logo/text silhouettes |
+| Metaballs (blobby, melting, dripping forms) | Parametric mechanical assemblies | Grid patterns, bar layouts |
+| Rounded cubes via subdivision surface | Screw threads, snap-fit joints | Bezier outlines (2D only) |
+| Torus/ring shapes with fine control | Quick single-primitive prototypes | When only a flat profile matters |
+| Any shape requiring true 3D swept cross-sections | rotate_extrude shapes | When OpenSCAD import is the final step |
+
+### Why Blender is Superior for Complex Shapes
+
+- **True mesh tube ribbons**: Sweep an elliptical cross-section along any 3D parametric path, producing real tubular geometry. OpenSCAD requires chaining hundreds of `hull(sphere(), sphere())` pairs (slow, faceted).
+- **Metaballs**: Define overlapping spheres/ellipsoids that automatically merge into smooth organic blobs. No equivalent in OpenSCAD.
+- **Curves with bevel**: A single `bpy.data.curves.new()` with `bevel_depth` creates a perfect cylindrical bar between two points. Replaces `hull() { sphere(); sphere(); }`.
+- **Subdivision surfaces**: Add a `SUBSURF` modifier to any mesh for instant smooth rounding. Replaces `minkowski() { cube(); sphere(); }` (which is extremely slow).
+- **Performance**: STL export takes ~2ms vs minutes in OpenSCAD for complex geometry. No `$fn`-related slowdowns.
+- **Full Python math**: Use `math`, `numpy`, `mathutils.Vector` for parametric generation with no language limitations.
+
+### The Blender Pipeline
+
+```
+Python script  -->  blender --background --python script.py  -->  STL file
+  (parametric)         (headless, no GUI needed)                  (instant export)
+```
+
+For preview rendering, import the STL back into OpenSCAD:
+
+```
+STL file  -->  OpenSCAD: import("model.stl");  -->  render-scad.sh  -->  PNG
+```
+
+This gives consistent preview rendering through the existing OpenSCAD pipeline while using Blender for the actual geometry generation.
+
+### Blender Detection (Cross-Platform)
+
+```bash
+# Try common locations
+if command -v blender &>/dev/null; then
+    BLENDER=blender
+elif [ -x "/Applications/Blender.app/Contents/MacOS/Blender" ]; then
+    BLENDER="/Applications/Blender.app/Contents/MacOS/Blender"
+elif [ -x "C:/Program Files/Blender Foundation/Blender 4.3/blender.exe" ]; then
+    BLENDER="C:/Program Files/Blender Foundation/Blender 4.3/blender.exe"
+elif [ -x "C:/Program Files/Blender Foundation/Blender 4.2/blender.exe" ]; then
+    BLENDER="C:/Program Files/Blender Foundation/Blender 4.2/blender.exe"
+fi
+
+# Run headless
+"$BLENDER" --background --python script.py
+```
+
+### Key Blender Python Patterns
+
+#### Cylindrical Bar via Curve + Bevel
+
+```python
+def create_bar(p1, p2, radius=0.65, name="bar"):
+    """Create a cylindrical bar between two 3D points."""
+    curve_data = bpy.data.curves.new(name=name, type='CURVE')
+    curve_data.dimensions = '3D'
+    curve_data.resolution_u = 8
+    curve_data.bevel_depth = radius
+    curve_data.bevel_resolution = 4
+    curve_data.use_fill_caps = True
+
+    spline = curve_data.splines.new('POLY')
+    spline.points.add(1)  # Already has 1 point, add 1 more
+    spline.points[0].co = (*p1, 1)
+    spline.points[1].co = (*p2, 1)
+
+    obj = bpy.data.objects.new(name, curve_data)
+    bpy.context.collection.objects.link(obj)
+    return obj
+```
+
+#### Mesh Tube Along Arbitrary 3D Path
+
+```python
+def create_tube_along_path(points, radius=1.0, n_ring=12):
+    """Sweep a circular cross-section along a list of 3D points."""
+    from mathutils import Vector
+    verts = []
+    faces = []
+    for i, center in enumerate(points):
+        center = Vector(center)
+        # Compute tangent from adjacent points
+        if i < len(points) - 1:
+            tangent = Vector(points[i + 1]) - center
+        else:
+            tangent = center - Vector(points[i - 1])
+        tangent.normalize()
+        # Frenet frame
+        up = Vector((0, 0, 1)) if abs(tangent.z) < 0.99 else Vector((1, 0, 0))
+        normal = tangent.cross(up).normalized()
+        binormal = tangent.cross(normal).normalized()
+        # Ring of vertices
+        for k in range(n_ring):
+            a = 2 * math.pi * k / n_ring
+            offset = normal * (radius * math.cos(a)) + binormal * (radius * math.sin(a))
+            verts.append(center + offset)
+    # Faces connecting adjacent rings
+    for i in range(len(points) - 1):
+        for k in range(n_ring):
+            k_next = (k + 1) % n_ring
+            v0 = i * n_ring + k
+            v1 = i * n_ring + k_next
+            v2 = (i + 1) * n_ring + k_next
+            v3 = (i + 1) * n_ring + k
+            faces.append((v0, v1, v2, v3))
+    mesh = bpy.data.meshes.new("tube_mesh")
+    mesh.from_pydata([(v.x, v.y, v.z) for v in verts], [], faces)
+    mesh.update()
+    obj = bpy.data.objects.new("tube", mesh)
+    bpy.context.collection.objects.link(obj)
+    return obj
+```
+
+#### Metaball Organic Blob
+
+```python
+def create_metaball_blob(elements, resolution=0.3, threshold=0.6):
+    """Create organic blobby shape from metaball elements.
+    Each element: {'pos': (x,y,z), 'radius': float, 'type': 'BALL'|'ELLIPSOID',
+                   'size': (sx,sy,sz) (optional, for ELLIPSOID)}
+    """
+    mball = bpy.data.metaballs.new("blob")
+    mball.resolution = resolution
+    mball.render_resolution = resolution / 2
+    mball.threshold = threshold
+    for spec in elements:
+        elem = mball.elements.new()
+        elem.co = spec['pos']
+        elem.radius = spec['radius']
+        elem.type = spec.get('type', 'BALL')
+        if elem.type == 'ELLIPSOID' and 'size' in spec:
+            elem.size_x, elem.size_y, elem.size_z = spec['size']
+    obj = bpy.data.objects.new("blob", mball)
+    bpy.context.collection.objects.link(obj)
+    return obj
+```
+
+#### Torus / Loop
+
+```python
+bpy.ops.mesh.primitive_torus_add(
+    location=(x, y, z),
+    major_radius=2.5,    # ring radius
+    minor_radius=0.7,    # tube radius
+    major_segments=32,
+    minor_segments=12,
+)
+```
+
+#### Rounded Cube via Subdivision Surface
+
+```python
+bpy.ops.mesh.primitive_cube_add(size=1, location=(x, y, z), scale=(w, d, h))
+cube = bpy.context.active_object
+subsurf = cube.modifiers.new(name="Subsurf", type='SUBSURF')
+subsurf.levels = 2
+subsurf.render_levels = 2
+```
+
+#### Convert and Join All Objects
+
+```python
+def convert_and_join():
+    """Convert all curves/metaballs to meshes, then join into one object."""
+    bpy.ops.object.select_all(action='SELECT')
+    bpy.context.view_layer.objects.active = bpy.context.selected_objects[0]
+    bpy.ops.object.convert(target='MESH')
+    bpy.ops.object.join()
+    return bpy.context.active_object
+```
+
+#### Export STL
+
+```python
+def export_stl(filepath):
+    bpy.ops.wm.stl_export(
+        filepath=filepath,
+        export_selected_objects=False,
+        ascii_format=False,
+    )
+```
+
+### Blender Workflow File Naming
+
+Follow the same versioning convention:
+
+```
+<model-name>_blender_<version>.py   ->  <model-name>_blender_<version>.stl
+                                    ->  <model-name>_blender_<version>.png (via OpenSCAD import)
+```
+
+### Preview via OpenSCAD Import
+
+After generating the STL with Blender, create a minimal `.scad` file to preview it:
+
+```openscad
+// Auto-generated preview wrapper
+import("model_blender_001.stl");
+```
+
+Then render with the standard pipeline:
+
+```bash
+.claude/skills/preview-scad/scripts/render-scad.sh preview_wrapper.scad --output model_blender_001.png
+```
+
+### Template Script
+
+A reusable Blender Python template with all core functions is available at `.claude/skills/openscad/scripts/blender-template.py`.
+
+### Key Gotchas
+
+- **Headless mode required**: Always use `blender --background --python script.py`. Never rely on GUI.
+- **Context matters**: Some `bpy.ops` calls require an active object. Always `select_all()` and set `view_layer.objects.active` before `convert()` or `join()`.
+- **Metaball resolution**: Lower `mball.resolution` = finer mesh (more polys). 0.3 is good for preview, 0.15 for final export.
+- **Spline point format**: Poly spline points need 4D coordinates `(*xyz, 1)` where the 4th value is the weight.
+- **Cap curves**: Set `curve_data.use_fill_caps = True` to close the ends of beveled curves.
+- **STL export API**: Use `bpy.ops.wm.stl_export()` (Blender 4.x). Older versions use `bpy.ops.export_mesh.stl()`.
+- **No orphan data**: Clean up unused meshes/curves after operations to keep memory usage low.
+
 ## Tips
 
 - Start simple and add complexity in iterations
@@ -253,4 +484,4 @@ Each layer is a separate SVG, imported and extruded at different heights, then c
 - Document what changed between versions in your response to the user
 - Only export to STL once the preview looks correct
 - For reference matching: iterate at least 5-8 times, comparing each render carefully
-- For complex organic shapes, prefer the SVG-based workflow over pure OpenSCAD hull/sphere chains
+- For complex organic shapes, prefer the Blender Python workflow; for flat 2D-to-3D shapes, use the SVG workflow; for simple mechanical parts, use pure OpenSCAD

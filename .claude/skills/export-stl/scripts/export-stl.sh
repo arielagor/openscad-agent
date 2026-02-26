@@ -21,9 +21,12 @@ find_openscad() {
     fi
     for pf in "/c/Program Files/OpenSCAD" "/c/Program Files (x86)/OpenSCAD" \
               "$PROGRAMFILES/OpenSCAD" "${PROGRAMFILES:-}/OpenSCAD"; do
-        if [[ -d "$pf" ]]; then
-            export PATH="$PATH:$pf"
-            if command -v openscad &> /dev/null; then echo "openscad"; return 0; fi
+        if [[ -x "$pf/openscad.exe" ]]; then
+            echo "$pf/openscad.exe"; return 0
+        elif [[ -x "$pf/openscad.com" ]]; then
+            echo "$pf/openscad.com"; return 0
+        elif [[ -x "$pf/openscad" ]]; then
+            echo "$pf/openscad"; return 0
         fi
     done
     for p in /usr/bin/openscad /usr/local/bin/openscad /snap/bin/openscad; do
